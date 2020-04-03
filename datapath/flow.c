@@ -748,6 +748,9 @@ static int key_extract_l3l4(struct sk_buff *skb, struct sw_flow_key *key)
 		error = parse_nsh(skb, key);
 		if (error)
 			return error;
+	} else if (key->eth.type == htons(ETH_P_8021AH)) {
+		__be32* itag = (__be32*)skb->data;
+		key->pbb.itag = *itag;
 	}
 	return 0;
 }

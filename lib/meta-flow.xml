@@ -3606,6 +3606,26 @@ r r c c c.
     </dl>
   </group>
 
+  <group title="PBB">
+    <p>
+      PBB.
+    </p>
+
+    <h2>Field Details</h2>
+
+    <field id="MFF_PBB_ISID" title="PBB ISID">
+      <p>
+        PBB ISID.
+      </p>
+    </field>
+
+    <field id="MFF_PBB_UCA" title="PBB UCA">
+      <p>
+        PBB UCA.
+      </p>
+    </field>
+  </group>
+
   <group title="Layer 2.5: MPLS">
     <p>
       One or more MPLS headers (more commonly called <dfn>MPLS

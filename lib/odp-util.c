@@ -127,6 +127,8 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_POP_VLAN: return 0;
     case OVS_ACTION_ATTR_PUSH_MPLS: return sizeof(struct ovs_action_push_mpls);
     case OVS_ACTION_ATTR_POP_MPLS: return sizeof(ovs_be16);
+    case OVS_ACTION_ATTR_PUSH_PBB: return sizeof(struct ovs_action_push_pbb);
+    case OVS_ACTION_ATTR_POP_PBB: return 0;
     case OVS_ACTION_ATTR_RECIRC: return sizeof(uint32_t);
     case OVS_ACTION_ATTR_HASH: return sizeof(struct ovs_action_hash);
     case OVS_ACTION_ATTR_SET: return ATTR_LEN_VARIABLE;
@@ -184,6 +186,7 @@ ovs_key_attr_to_string(enum ovs_key_attr attr, char *namebuf, size_t bufsize)
     case OVS_KEY_ATTR_ND: return "nd";
     case OVS_KEY_ATTR_ND_EXTENSIONS: return "nd_ext";
     case OVS_KEY_ATTR_MPLS: return "mpls";
+    case OVS_KEY_ATTR_PBB: return "pbb";
     case OVS_KEY_ATTR_DP_HASH: return "dp_hash";
     case OVS_KEY_ATTR_RECIRC_ID: return "recirc_id";
     case OVS_KEY_ATTR_PACKET_TYPE: return "packet_type";
@@ -1202,6 +1205,17 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
     case OVS_ACTION_ATTR_POP_MPLS: {
         ovs_be16 ethertype = nl_attr_get_be16(a);
         ds_put_format(ds, "pop_mpls(eth_type=0x%"PRIx16")", ntohs(ethertype));
+        break;
+    }
+    case OVS_ACTION_ATTR_PUSH_PBB: {
+        const struct ovs_action_push_pbb *pbb = nl_attr_get(a);
+        ds_put_cstr(ds, "push_pbb(");
+        ds_put_format(ds, "isid=0x%"PRIx32",eth_type=0x%"PRIx16")",
+                      ntohl(pbb->pbb_itag), ntohs(pbb->pbb_ethertype));
+        break;
+    }
+    case OVS_ACTION_ATTR_POP_PBB: {
+        ds_put_cstr(ds, "pop_pbb");
         break;
     }
     case OVS_ACTION_ATTR_SAMPLE:
@@ -2450,6 +2464,26 @@ parse_odp_action__(struct parse_odp_context *context, const char *s,
     }
 
     {
+        struct ovs_action_push_pbb pbb;
+        int itag = 0, eth_type = 0;
+        int n = -1;
+
+        if (ovs_scan(s, "push_pbb(itag=%i,eth_type=%i)%n", &itag, &eth_type, &n)) {
+            pbb.pbb_itag = htonl(itag);
+            pbb.pbb_ethertype = htons(eth_type);
+            nl_msg_put_unspec(actions, OVS_ACTION_ATTR_PUSH_PBB,
+                              &pbb, sizeof pbb);
+
+            return n;
+        }
+    }
+
+    if (!strncmp(s, "pop_pbb", 7)) {
+        nl_msg_put_flag(actions, OVS_ACTION_ATTR_POP_PBB);
+        return 7;
+    }
+
+    {
         uint32_t port;
         int n;
 
@@ -2615,6 +2649,7 @@ const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = {
     [OVS_KEY_ATTR_VLAN]      = { .len = 2 },
     [OVS_KEY_ATTR_ETHERTYPE] = { .len = 2 },
     [OVS_KEY_ATTR_MPLS]      = { .len = ATTR_LEN_VARIABLE },
+    [OVS_KEY_ATTR_PBB]       = { .len = sizeof(struct ovs_key_pbb) },
     [OVS_KEY_ATTR_IPV4]      = { .len = sizeof(struct ovs_key_ipv4) },
     [OVS_KEY_ATTR_IPV6]      = { .len = sizeof(struct ovs_key_ipv6) },
     [OVS_KEY_ATTR_TCP]       = { .len = sizeof(struct ovs_key_tcp) },
@@ -3157,6 +3192,7 @@ odp_mask_is_constant__(enum ovs_key_attr attr, const void *mask, size_t size,
     case OVS_KEY_ATTR_DP_HASH:
     case OVS_KEY_ATTR_RECIRC_ID:
     case OVS_KEY_ATTR_MPLS:
+    case OVS_KEY_ATTR_PBB:
     case OVS_KEY_ATTR_CT_STATE:
     case OVS_KEY_ATTR_CT_ZONE:
     case OVS_KEY_ATTR_CT_MARK:
@@ -4134,6 +4170,24 @@ format_odp_key_attr__(const struct nlattr *a, const struct nlattr *ma,
         format_mpls(ds, mpls_key, mpls_mask, size / sizeof *mpls_key);
         break;
     }
+
+    case OVS_KEY_ATTR_PBB: {
+            const struct ovs_key_pbb *pbb_key = nl_attr_get(a);
+            const struct ovs_key_pbb *pbb_mask = NULL;
+            if (!is_exact) {
+                pbb_mask = nl_attr_get(ma);
+                ds_put_format(ds, "isid=%"PRIu32"/%"PRIu32",uca=%d",
+                                pbb_itag_to_isid(pbb_key->pbb_itag),
+                                pbb_itag_to_isid(pbb_mask->pbb_itag),
+                                pbb_itag_to_uca(pbb_key->pbb_itag));
+            } else {
+                ds_put_format(ds, "isid=%"PRIu32",uca=%d",
+                                pbb_itag_to_isid(pbb_key->pbb_itag),
+                                pbb_itag_to_uca(pbb_key->pbb_itag));
+            }
+        }
+        break;
+
     case OVS_KEY_ATTR_ETHERTYPE:
         ds_put_format(ds, "0x%04"PRIx16, ntohs(nl_attr_get_be16(a)));
         if (!is_exact) {
@@ -5007,6 +5061,18 @@ scan_be32_bf(const char *s, ovs_be32 *key, ovs_be32 *mask, uint8_t bits,
 }
 
 static int
+scan_pbb_isid(const char *s, ovs_be32 *key, ovs_be32 *mask)
+{
+    return scan_be32_bf(s, key, mask, 24, PBB_ISID_SHIFT);
+}
+
+static int
+scan_pbb_uca(const char *s, ovs_be32 *key, ovs_be32 *mask)
+{
+    return scan_be32_bf(s, key, mask, 1, PBB_UCA_SHIFT);
+}
+
+static int
 scan_mpls_label(const char *s, ovs_be32 *key, ovs_be32 *mask)
 {
     return scan_be32_bf(s, key, mask, 20, MPLS_LABEL_SHIFT);
@@ -5725,6 +5791,11 @@ parse_odp_key_mask_attr__(struct parse_odp_context *context, const char *s,
         SCAN_FIELD_ARRAY("bos=", mpls_bos, mpls_lse);
     } SCAN_END_ARRAY(OVS_KEY_ATTR_MPLS);
 
+    SCAN_BEGIN("pbb(", struct ovs_key_pbb) {
+        SCAN_FIELD("isid=", pbb_isid, pbb_itag);
+        SCAN_FIELD("uca=", pbb_uca, pbb_itag);
+    } SCAN_END(OVS_KEY_ATTR_PBB);
+
     SCAN_BEGIN("ipv4(", struct ovs_key_ipv4) {
         SCAN_FIELD("src=", ipv4, ipv4_src);
         SCAN_FIELD("dst=", ipv4, ipv4_dst);
@@ -6131,6 +6202,11 @@ odp_flow_key_from_flow__(const struct odp_flow_key_parms *parms,
         }
     } else if (flow->dl_type == htons(ETH_TYPE_NSH)) {
         nsh_key_to_attr(buf, &data->nsh, NULL, 0, export_mask);
+    } else if (flow->dl_type == htons(ETH_TYPE_PBB)) {
+        struct ovs_key_pbb *pbb_key;
+        pbb_key = nl_msg_put_unspec_uninit(buf, OVS_KEY_ATTR_PBB,
+                                           sizeof *pbb_key);
+        pbb_key->pbb_itag = data->pbb_itag;
     }
 
     if (is_ip_any(flow) && !(flow->nw_frag & FLOW_NW_FRAG_LATER)) {
@@ -6385,6 +6461,7 @@ odp_key_to_dp_packet(const struct nlattr *key, size_t key_len,
         case OVS_KEY_ATTR_SCTP:
         case OVS_KEY_ATTR_TCP_FLAGS:
         case OVS_KEY_ATTR_MPLS:
+        case OVS_KEY_ATTR_PBB:
         case OVS_KEY_ATTR_PACKET_TYPE:
         case OVS_KEY_ATTR_NSH:
         case __OVS_KEY_ATTR_MAX:
@@ -6774,6 +6851,21 @@ parse_l2_5_onward(const struct nlattr *attrs[OVS_KEY_ATTR_MAX + 1],
                 check_len = nl_attr_get_size(attrs[OVS_KEY_ATTR_NSH]);
                 expected_bit = OVS_KEY_ATTR_NSH;
             }
+        }
+    } else if (src_flow->dl_type == htons(ETH_TYPE_PBB)) {
+        if (!is_mask) {
+            *expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_PBB;
+        }
+
+        if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_PBB)) {
+            const struct ovs_key_pbb *pbb_key;
+
+            pbb_key = nl_attr_get(attrs[OVS_KEY_ATTR_PBB]);
+            flow->pbb_itag = pbb_key->pbb_itag;
+            flow->pbb_dltype = flow->dl_type;
+            flow->pbb_ethtype = htons(ETH_TYPE_PBB);
+            flow->dl_type = htons(ETH_TYPE_PBB);
+            *expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_PBB;
         }
     } else {
         goto done;
@@ -7712,6 +7804,31 @@ commit_mpls_action(const struct flow *flow, struct flow *base,
 }
 
 static void
+commit_pbb_action(const struct flow *flow OVS_UNUSED,
+                  struct flow *base OVS_UNUSED,
+                  struct ofpbuf *odp_actions OVS_UNUSED)
+{
+    if (flow->pbb_ethtype != base->pbb_ethtype) {
+        if (flow->pbb_ethtype != 0) {
+            struct ovs_action_push_pbb *pbb;
+
+            pbb = nl_msg_put_unspec_zero(odp_actions,
+                                         OVS_ACTION_ATTR_PUSH_PBB,
+                                         sizeof *pbb);
+            pbb->pbb_ethertype = flow->pbb_ethtype;
+            pbb->pbb_itag = flow->pbb_itag;
+        } else {
+            nl_msg_put_flag(odp_actions, OVS_ACTION_ATTR_POP_PBB);
+        }
+
+        base->dl_type  = flow->dl_type;
+        base->pbb_ethtype = flow->pbb_ethtype;
+        base->pbb_dltype = flow->pbb_dltype;
+        base->pbb_itag = flow->pbb_itag;
+    }
+}
+
+static void
 get_ipv4_key(const struct flow *flow, struct ovs_key_ipv4 *ipv4, bool is_mask)
 {
     ipv4->ipv4_src = flow->nw_src;
@@ -8409,6 +8526,7 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
 
     commit_encap_decap_action(flow, base, odp_actions, wc,
                               pending_encap, pending_decap, encap_data);
+    commit_pbb_action(flow, base, odp_actions);
     commit_set_ether_action(flow, base, odp_actions, wc, use_masked);
     /* Make packet a non-MPLS packet before committing L3/4 actions,
      * which would otherwise do nothing. */

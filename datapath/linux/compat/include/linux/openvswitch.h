@@ -366,6 +366,7 @@ enum ovs_key_attr {
 	OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4,   /* struct ovs_key_ct_tuple_ipv4 */
 	OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6,   /* struct ovs_key_ct_tuple_ipv6 */
 	OVS_KEY_ATTR_NSH,       /* Nested set of ovs_nsh_key_* */
+	OVS_KEY_ATTR_PBB,		/* u32 itag of PBB */
 
 #ifdef __KERNEL__
 	/* Only used within kernel data path. */
@@ -430,6 +431,10 @@ struct ovs_key_ethernet {
 
 struct ovs_key_mpls {
 	__be32 mpls_lse;
+};
+
+struct ovs_key_pbb {
+	__be32 pbb_itag;
 };
 
 struct ovs_key_ipv4 {
@@ -708,6 +713,17 @@ struct ovs_action_push_mpls {
 };
 
 /**
+ * struct ovs_action_push_pbb - %OVS_ACTION_ATTR_PUSH_PBB action argument.
+ * @pbb_itag: PBB ITAG.
+ * @pbb_ethertype: Ethertype to set in the encapsulating ethernet frame.
+ *
+ */
+struct ovs_action_push_pbb {
+	__be32 pbb_itag;
+	__be16 pbb_ethertype; /* Either %ETH_P_MPLS_UC or %ETH_P_MPLS_MC */
+};
+
+/**
  * struct ovs_action_push_vlan - %OVS_ACTION_ATTR_PUSH_VLAN action argument.
  * @vlan_tpid: Tag protocol identifier (TPID) to push.
  * @vlan_tci: Tag control identifier (TCI) to push.  The CFI bit must be set
@@ -971,6 +987,8 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_HASH,	      /* struct ovs_action_hash. */
 	OVS_ACTION_ATTR_PUSH_MPLS,    /* struct ovs_action_push_mpls. */
 	OVS_ACTION_ATTR_POP_MPLS,     /* __be16 ethertype. */
+	OVS_ACTION_ATTR_PUSH_PBB,     /* struct ovs_action_push_pbb. */
+	OVS_ACTION_ATTR_POP_PBB,      /* No argument. */
 	OVS_ACTION_ATTR_SET_MASKED,   /* One nested OVS_KEY_ATTR_* including
 				       * data immediately followed by a mask.
 				       * The data must be zero for the unmasked

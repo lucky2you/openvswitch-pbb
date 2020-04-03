@@ -158,6 +158,11 @@ struct flow {
                                  * field.
                                  * Keep last for BUILD_ASSERT_DECL below. */
     ovs_be32 pad3;              /* Pad to 64 bits. */
+
+    ovs_be16 pbb_ethtype;       /* Ethernet frame type. */
+    ovs_be16 pbb_dltype;        /* Old dl_type. */
+    ovs_be32 pbb_itag;          /* PBB ITAG. */
+
 };
 BUILD_ASSERT_DECL(sizeof(struct flow) % sizeof(uint64_t) == 0);
 BUILD_ASSERT_DECL(sizeof(struct flow_tnl) % sizeof(uint64_t) == 0);

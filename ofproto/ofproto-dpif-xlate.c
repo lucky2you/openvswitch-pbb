@@ -4979,6 +4979,23 @@ compose_mpls_pop_action(struct xlate_ctx *ctx, ovs_be16 eth_type)
     }
 }
 
+static void
+compose_pbb_push_action(struct xlate_ctx *ctx, struct ofpact_push_pbb *pbb)
+{
+    struct flow *flow = &ctx->xin->flow;
+
+    ovs_assert(pbb->ethertype == htons(ETH_TYPE_PBB));
+
+    flow_push_pbb(flow, pbb->ethertype);
+}
+
+static void
+compose_pbb_pop_action(struct xlate_ctx *ctx)
+{
+    struct flow *flow = &ctx->xin->flow;
+    flow_pop_pbb(flow);
+}
+
 static bool
 compose_dec_ttl(struct xlate_ctx *ctx, struct ofpact_cnt_ids *ids)
 {
@@ -5578,6 +5595,8 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         case OFPACT_POP_QUEUE:
         case OFPACT_PUSH_MPLS:
         case OFPACT_PUSH_VLAN:
+        case OFPACT_PUSH_PBB:
+        case OFPACT_POP_PBB:
         case OFPACT_REG_MOVE:
         case OFPACT_RESUBMIT:
         case OFPACT_SAMPLE:
@@ -5893,6 +5912,8 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_POP_QUEUE:
         case OFPACT_PUSH_MPLS:
         case OFPACT_POP_MPLS:
+        case OFPACT_PUSH_PBB:
+        case OFPACT_POP_PBB:
         case OFPACT_SET_MPLS_LABEL:
         case OFPACT_SET_MPLS_TC:
         case OFPACT_SET_MPLS_TTL:
@@ -6516,6 +6537,8 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_PBB:
+    case OFPACT_POP_PBB:
     case OFPACT_POP_QUEUE:
     case OFPACT_FIN_TIMEOUT:
     case OFPACT_RESUBMIT:
@@ -6834,6 +6857,14 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_POP_MPLS:
             compose_mpls_pop_action(ctx, ofpact_get_POP_MPLS(a)->ethertype);
+            break;
+
+        case OFPACT_PUSH_PBB:
+            compose_pbb_push_action(ctx, ofpact_get_PUSH_PBB(a));
+            break;
+
+        case OFPACT_POP_PBB:
+            compose_pbb_pop_action(ctx);
             break;
 
         case OFPACT_SET_MPLS_LABEL:

@@ -302,6 +302,20 @@ set_ethertype(struct dp_packet *packet, ovs_be16 eth_type)
     }
 }
 
+void
+set_pbb_itag_uca(ovs_be32 *itag, uint8_t uca)
+{
+    *itag &= ~htonl(PBB_UCA_MASK);
+    *itag |= htonl((uca << PBB_UCA_SHIFT) & PBB_UCA_MASK);
+}
+
+void
+set_pbb_itag_isid(ovs_be32 *itag, ovs_be32 isid)
+{
+    *itag &= ~htonl(PBB_ISID_MASK);
+    *itag |= htonl((ntohl(isid) << PBB_ISID_SHIFT) & PBB_ISID_MASK);
+}
+
 static bool is_mpls(struct dp_packet *packet)
 {
     return packet->l2_5_ofs != UINT16_MAX;
@@ -416,6 +430,39 @@ pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
          * decapsulation of MPLS header. */
         dp_packet_reset_offload(packet);
     }
+}
+
+void
+push_pbb(struct dp_packet *packet, ovs_be16 ethtype)
+{
+    struct eth_header *ceh = dp_packet_eth(packet);
+    size_t len = sizeof(struct eth_header) + sizeof(ovs_be32);
+    struct eth_header *beh = (struct eth_header *)dp_packet_resize_l2(packet, len);
+    memcpy(beh, ceh, sizeof(struct eth_header));
+    beh->eth_type = ethtype;
+}
+
+bool
+pop_pbb(struct dp_packet *packet)
+{
+    size_t len = sizeof(struct eth_header) + sizeof(ovs_be32);
+    struct eth_header *eh = dp_packet_eth(packet);
+
+    if (eh == NULL || eh->eth_type != htons(ETH_TYPE_PBB)) {
+        return false;
+    }
+
+    dp_packet_reset_packet(packet, len);
+ 
+    return true;
+}
+
+void
+set_pbb_itag(struct dp_packet *packet, ovs_be32 pbb_itag)
+{
+    struct eth_header *ceh = dp_packet_eth(packet);
+    ovs_16aligned_be32* itag = (ovs_16aligned_be32*)(ceh + 1);
+    put_16aligned_be32(itag, pbb_itag);
 }
 
 void

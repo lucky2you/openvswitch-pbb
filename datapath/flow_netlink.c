@@ -85,10 +85,12 @@ static bool actions_may_change_flow(const struct nlattr *actions)
 		case OVS_ACTION_ATTR_POP_MPLS:
 		case OVS_ACTION_ATTR_POP_NSH:
 		case OVS_ACTION_ATTR_POP_VLAN:
+		case OVS_ACTION_ATTR_POP_PBB:
 		case OVS_ACTION_ATTR_PUSH_ETH:
 		case OVS_ACTION_ATTR_PUSH_MPLS:
 		case OVS_ACTION_ATTR_PUSH_NSH:
 		case OVS_ACTION_ATTR_PUSH_VLAN:
+		case OVS_ACTION_ATTR_PUSH_PBB:
 		case OVS_ACTION_ATTR_SAMPLE:
 		case OVS_ACTION_ATTR_SET:
 		case OVS_ACTION_ATTR_SET_MASKED:
@@ -183,6 +185,7 @@ static bool match_validate(const struct sw_flow_match *match,
 			| (1ULL << OVS_KEY_ATTR_ARP)
 			| (1ULL << OVS_KEY_ATTR_ND)
 			| (1ULL << OVS_KEY_ATTR_MPLS)
+			| (1ULL << OVS_KEY_ATTR_PBB)
 			| (1ULL << OVS_KEY_ATTR_NSH));
 
 	/* Always allowed mask fields. */
@@ -202,6 +205,12 @@ static bool match_validate(const struct sw_flow_match *match,
 		key_expected |= 1ULL << OVS_KEY_ATTR_MPLS;
 		if (match->mask && (match->mask->key.eth.type == htons(0xffff)))
 			mask_allowed |= 1ULL << OVS_KEY_ATTR_MPLS;
+	}
+
+	if (match->key->eth.type == htons(ETH_P_8021AH)) {
+		key_expected |= 1ULL << OVS_KEY_ATTR_PBB;
+		if (match->mask && (match->mask->key.eth.type == htons(0xffff)))
+			mask_allowed |= 1ULL << OVS_KEY_ATTR_PBB;
 	}
 
 	if (match->key->eth.type == htons(ETH_P_IP)) {
@@ -359,7 +368,7 @@ size_t ovs_key_attr_size(void)
 	/* Whenever adding new OVS_KEY_ FIELDS, we should consider
 	 * updating this function.
 	 */
-	BUILD_BUG_ON(OVS_KEY_ATTR_TUNNEL_INFO != 29);
+	BUILD_BUG_ON(OVS_KEY_ATTR_TUNNEL_INFO != 30);
 
 	return    nla_total_size(4)   /* OVS_KEY_ATTR_PRIORITY */
 		+ nla_total_size(0)   /* OVS_KEY_ATTR_TUNNEL */
@@ -378,6 +387,7 @@ size_t ovs_key_attr_size(void)
 		+ nla_total_size(12)  /* OVS_KEY_ATTR_ETHERNET */
 		+ nla_total_size(2)   /* OVS_KEY_ATTR_ETHERTYPE */
 		+ nla_total_size(4)   /* OVS_KEY_ATTR_VLAN */
+		+ nla_total_size(4)   /* OVS_KEY_ATTR_PBB */
 		+ nla_total_size(0)   /* OVS_KEY_ATTR_ENCAP */
 		+ nla_total_size(2)   /* OVS_KEY_ATTR_ETHERTYPE */
 		+ nla_total_size(40)  /* OVS_KEY_ATTR_IPV6 */
@@ -439,6 +449,7 @@ static const struct ovs_len_tbl ovs_key_lens[OVS_KEY_ATTR_MAX + 1] = {
 	[OVS_KEY_ATTR_TUNNEL]	 = { .len = OVS_ATTR_NESTED,
 				     .next = ovs_tunnel_key_lens, },
 	[OVS_KEY_ATTR_MPLS]	 = { .len = sizeof(struct ovs_key_mpls) },
+	[OVS_KEY_ATTR_PBB]	 = { .len = sizeof(struct ovs_key_pbb) },
 	[OVS_KEY_ATTR_CT_STATE]	 = { .len = sizeof(u32) },
 	[OVS_KEY_ATTR_CT_ZONE]	 = { .len = sizeof(u16) },
 	[OVS_KEY_ATTR_CT_MARK]	 = { .len = sizeof(u32) },
@@ -1627,6 +1638,16 @@ static int ovs_key_from_nlattrs(struct net *net, struct sw_flow_match *match,
 		attrs &= ~(1ULL << OVS_KEY_ATTR_MPLS);
 	}
 
+	if (attrs & (1ULL << OVS_KEY_ATTR_PBB)) {
+		const struct ovs_key_pbb *pbb_key;
+
+		pbb_key = nla_data(a[OVS_KEY_ATTR_PBB]);
+		SW_FLOW_KEY_PUT(match, pbb.itag,
+				pbb_key->pbb_itag, is_mask);
+
+		attrs &= ~(1ULL << OVS_KEY_ATTR_PBB);
+	}
+
 	if (attrs & (1ULL << OVS_KEY_ATTR_TCP)) {
 		const struct ovs_key_tcp *tcp_key;
 
@@ -2110,6 +2131,14 @@ static int __ovs_nla_put_key(const struct sw_flow_key *swkey,
 			goto nla_put_failure;
 		mpls_key = nla_data(nla);
 		mpls_key->mpls_lse = output->mpls.top_lse;
+	} else if (swkey->eth.type == htons(ETH_P_8021AH)) {
+		struct ovs_key_pbb *pbb_key;
+
+		nla = nla_reserve(skb, OVS_KEY_ATTR_PBB, sizeof(*pbb_key));
+		if (!nla)
+			goto nla_put_failure;
+		pbb_key = nla_data(nla);
+		pbb_key->pbb_itag = output->pbb.itag;
 	}
 
 	if ((swkey->eth.type == htons(ETH_P_IP) ||
@@ -2775,6 +2804,11 @@ static int validate_set(const struct nlattr *a,
 			return -EINVAL;
 		break;
 
+	case OVS_KEY_ATTR_PBB:
+		if (eth_type != htons(ETH_P_8021AH))
+			return -EINVAL;
+		break;
+
 	case OVS_KEY_ATTR_SCTP:
 		if ((eth_type != htons(ETH_P_IP) &&
 		     eth_type != htons(ETH_P_IPV6)) ||
@@ -2972,6 +3006,8 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
 			[OVS_ACTION_ATTR_POP_ETH] = 0,
 			[OVS_ACTION_ATTR_PUSH_NSH] = (u32)-1,
 			[OVS_ACTION_ATTR_POP_NSH] = 0,
+			[OVS_ACTION_ATTR_PUSH_PBB] = sizeof(struct ovs_action_push_pbb),
+			[OVS_ACTION_ATTR_POP_PBB] = 0,
 			[OVS_ACTION_ATTR_METER] = sizeof(u32),
 			[OVS_ACTION_ATTR_CLONE] = (u32)-1,
 			[OVS_ACTION_ATTR_CHECK_PKT_LEN] = (u32)-1,
@@ -3131,6 +3167,24 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
 				return -EINVAL;
 			mac_proto = MAC_PROTO_NONE;
 			break;
+
+		case OVS_ACTION_ATTR_PUSH_PBB: {
+			const struct ovs_action_push_pbb *pbb = nla_data(a);
+
+			if (pbb->pbb_ethertype != htons(ETH_P_8021AH))
+				return -EINVAL;
+
+			eth_type = pbb->pbb_ethertype;
+			break;
+		}
+
+		case OVS_ACTION_ATTR_POP_PBB: {
+			if (eth_type != htons(ETH_P_8021AH))
+				return -EINVAL;
+
+			eth_type = htons(0);
+			break;
+		}
 
 		case OVS_ACTION_ATTR_PUSH_NSH:
 			if (mac_proto != MAC_PROTO_ETHERNET) {

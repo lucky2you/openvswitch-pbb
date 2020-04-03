@@ -280,6 +280,24 @@ static int set_mpls(struct sk_buff *skb, struct sw_flow_key *flow_key,
 	return 0;
 }
 
+static int set_pbb(struct sk_buff *skb, struct sw_flow_key *flow_key,
+		           const __be32 *pbb_itag, const __be32 *mask)
+{
+	__be32 *stack;
+	__be32 itag;
+	int err;
+
+	err = skb_ensure_writable(skb, skb->mac_len + MPLS_HLEN);
+	if (unlikely(err))
+		return err;
+
+	stack = (__be32 *)(skb_mac_header(skb) + skb->mac_len);
+	itag = OVS_MASKED(*stack, *pbb_itag, *mask);
+	*stack = itag;
+	flow_key->pbb.itag = itag;
+	return 0;
+}
+
 static int pop_vlan(struct sk_buff *skb, struct sw_flow_key *key)
 {
 	int err;
@@ -413,6 +431,53 @@ static int pop_nsh(struct sk_buff *skb, struct sw_flow_key *key)
 	else
 		key->mac_proto = MAC_PROTO_NONE;
 	invalidate_flow_key(key);
+	return 0;
+}
+
+static int push_pbb(struct sk_buff *skb, struct sw_flow_key *key,
+                    const struct ovs_action_push_pbb *pbb)
+{
+	struct ethhdr *chdr = eth_hdr(skb);
+	struct ethhdr *bhdr;
+
+	/* Add the new Ethernet header */
+	if (skb_cow_head(skb, ETH_HLEN + 4) < 0)
+		return -ENOMEM;
+
+	skb_push(skb, ETH_HLEN + 4);
+	skb_reset_mac_header(skb);
+	skb_reset_mac_len(skb);
+
+	bhdr = eth_hdr(skb);
+	ether_addr_copy(bhdr->h_source, chdr->h_source);
+	ether_addr_copy(bhdr->h_dest,   chdr->h_dest);
+	bhdr->h_proto = pbb->pbb_ethertype;
+	*(__be32*)(bhdr+1) = pbb->pbb_itag;
+
+	skb_postpush_rcsum(skb, bhdr, ETH_HLEN + 4);
+
+	key->mac_proto = MAC_PROTO_ETHERNET;
+	invalidate_flow_key(key);
+	return 0;
+}
+
+static int pop_pbb(struct sk_buff *skb, struct sw_flow_key *key)
+{
+	struct ethhdr *hdr = eth_hdr(skb);
+	size_t length = ETH_HLEN + 4;
+
+	if (likely(hdr->h_proto == htons(ETH_P_8021AH))) {
+
+		skb_pull_rcsum(skb, length);
+		skb_reset_mac_header(skb);
+		skb_reset_network_header(skb);
+		skb_reset_mac_len(skb);
+
+		hdr = eth_hdr(skb);
+		skb->protocol = hdr->h_proto;
+		key->mac_proto = MAC_PROTO_ETHERNET;
+		invalidate_flow_key(key);
+	}
 	return 0;
 }
 
@@ -1190,6 +1255,11 @@ static int execute_masked_set_action(struct sk_buff *skb,
 								    __be32 *));
 		break;
 
+	case OVS_KEY_ATTR_PBB:
+		err = set_pbb(skb, flow_key, nla_data(a),
+				  get_mask(a, __be32*));
+		break;
+
 	case OVS_KEY_ATTR_CT_STATE:
 	case OVS_KEY_ATTR_CT_ZONE:
 	case OVS_KEY_ATTR_CT_MARK:
@@ -1399,6 +1469,14 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 		case OVS_ACTION_ATTR_POP_NSH:
 			err = pop_nsh(skb, key);
+			break;
+
+		case OVS_ACTION_ATTR_PUSH_PBB:
+			err = push_pbb(skb, key, nla_data(a));
+			break;
+
+		case OVS_ACTION_ATTR_POP_PBB:
+			err = pop_pbb(skb, key);
 			break;
 
 		case OVS_ACTION_ATTR_METER:

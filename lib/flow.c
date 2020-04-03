@@ -966,6 +966,16 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                                     sizeof(struct ovs_key_nsh) /
                                     sizeof(uint64_t));
             }
+        } else if (dl_type == htons(ETH_TYPE_PBB)) {
+            ovs_be16 pbb_ethtype = dl_type;
+            ovs_be16 pbb_dltype = 0;
+            ovs_be32* pbb_itag =  data_try_pull(&data, &size, 4);
+            if (OVS_LIKELY(pbb_itag)) {
+                miniflow_push_be16(mf, pbb_ethtype, pbb_ethtype);
+                miniflow_push_be16(mf, pbb_dltype, pbb_dltype);
+                miniflow_push_be32(mf, pbb_itag, *pbb_itag);
+            }
+
         }
         goto out;
     }
@@ -1883,6 +1893,10 @@ flow_wildcards_init_for_packet(struct flow_wildcards *wc,
         WC_MASK_FIELD(wc, nsh.np);
         WC_MASK_FIELD(wc, nsh.path_hdr);
         WC_MASK_FIELD(wc, nsh.context);
+    } else if (flow->dl_type == htons(ETH_TYPE_PBB)) {
+        WC_MASK_FIELD(wc, pbb_ethtype);
+        WC_MASK_FIELD(wc, pbb_dltype);
+        WC_MASK_FIELD(wc, pbb_itag);
     } else {
         return; /* Unknown ethertype. */
     }
@@ -2018,6 +2032,10 @@ flow_wc_map(const struct flow *flow, struct flowmap *map)
         FLOWMAP_SET(map, nsh.np);
         FLOWMAP_SET(map, nsh.path_hdr);
         FLOWMAP_SET(map, nsh.context);
+    } else if (flow->dl_type == htons(ETH_TYPE_NSH)) {
+        FLOWMAP_SET(map, pbb_ethtype);
+        FLOWMAP_SET(map, pbb_dltype);
+        FLOWMAP_SET(map, pbb_itag);
     }
 }
 
@@ -2979,6 +2997,33 @@ flow_set_mpls_lse(struct flow *flow, int idx, ovs_be32 lse)
     flow->mpls_lse[idx] = lse;
 }
 
+void
+flow_push_pbb(struct flow *flow, ovs_be16 pbb_eth_type)
+{
+    flow->pbb_ethtype = pbb_eth_type;
+    flow->pbb_dltype = flow->dl_type;
+    flow->dl_type = htons(ETH_TYPE_PBB);
+}
+
+void
+flow_pop_pbb(struct flow *flow)
+{
+    flow->dl_type = flow->pbb_dltype;
+    flow->pbb_ethtype = 0;
+}
+
+void
+flow_set_pbb_isid(struct flow *flow, ovs_be32 isid)
+{
+    set_pbb_itag_isid(&flow->pbb_itag, isid);
+}
+
+void
+flow_set_pbb_uca(struct flow *flow, uint8_t uca)
+{
+    set_pbb_itag_uca(&flow->pbb_itag, uca);
+}
+
 static void
 flow_compose_l7(struct dp_packet *p, const void *l7, size_t l7_len)
 {
@@ -3205,6 +3250,8 @@ flow_compose(struct dp_packet *p, const struct flow *flow,
         eth->eth_type = htons(dp_packet_size(p));
         return;
     }
+
+    // TODO: !!!
 
     for (int encaps = FLOW_MAX_VLAN_HEADERS - 1; encaps >= 0; encaps--) {
         if (flow->vlans[encaps].tci & htons(VLAN_CFI)) {

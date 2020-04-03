@@ -1121,6 +1121,20 @@ nx_put_raw(struct ofpbuf *b, enum ofp_version oxm, const struct match *match,
                     match->wc.masks.vlans[0].tci);
     }
 
+    /* PBB */
+    if (dl_type == htons(ETH_TYPE_PBB)) {
+        if (match->wc.masks.pbb_itag & htonl(PBB_UCA_MASK)) {
+            nxm_put_8(&ctx, MFF_PBB_UCA, oxm,
+                      pbb_itag_to_uca(flow->pbb_itag));
+        }
+
+        if (match->wc.masks.pbb_itag & htonl(PBB_ISID_MASK)) {
+            nxm_put_32(&ctx, MFF_PBB_ISID, oxm,
+                       htonl(pbb_itag_to_isid(flow->pbb_itag)));
+        }
+
+    }
+
     /* MPLS. */
     if (eth_type_mpls(dl_type)) {
         if (match->wc.masks.mpls_lse[0] & htonl(MPLS_TC_MASK)) {

@@ -348,6 +348,12 @@ void set_mpls_lse_bos(ovs_be32 *lse, uint8_t bos);
 ovs_be32 set_mpls_lse_values(uint8_t ttl, uint8_t tc, uint8_t bos,
                              ovs_be32 label);
 
+void push_pbb(struct dp_packet *packet, ovs_be16 ethtype);
+bool pop_pbb(struct dp_packet *packet);
+void set_pbb_itag_uca(ovs_be32 *itag, uint8_t uca);
+void set_pbb_itag_isid(ovs_be32 *itag, ovs_be32 isid);
+void set_pbb_itag(struct dp_packet *packet, ovs_be32 pbb_itag);
+
 /* Example:
  *
  * struct eth_addr mac;
@@ -407,6 +413,7 @@ ovs_be32 set_mpls_lse_values(uint8_t ttl, uint8_t tc, uint8_t bos,
 #define ETH_TYPE_NSH           0x894f
 #define ETH_TYPE_ERSPAN1       0x88be   /* version 1 type II */
 #define ETH_TYPE_ERSPAN2       0x22eb   /* version 2 type III */
+#define ETH_TYPE_PBB           0x88e7
 
 static inline bool eth_type_mpls(ovs_be16 eth_type)
 {
@@ -529,6 +536,25 @@ struct vlan_eth_header {
     ovs_be16 veth_next_type;
 };
 BUILD_ASSERT_DECL(VLAN_ETH_HEADER_LEN == sizeof(struct vlan_eth_header));
+
+/* PBB related definitions */
+#define PBB_ISID_MASK       0x00ffffff
+#define PBB_ISID_SHIFT      0
+
+#define PBB_UCA_MASK        0x08000000
+#define PBB_UCA_SHIFT       27
+
+static inline uint32_t
+pbb_itag_to_isid(ovs_be32 pbb_itag)
+{
+    return (ntohl(pbb_itag) & PBB_ISID_MASK) >> PBB_ISID_SHIFT;
+}
+
+static inline uint8_t
+pbb_itag_to_uca(ovs_be32 pbb_itag)
+{
+    return (ntohl(pbb_itag) & PBB_UCA_MASK) >> PBB_UCA_SHIFT;
+}
 
 /* MPLS related definitions */
 #define MPLS_TTL_MASK       0x000000ff

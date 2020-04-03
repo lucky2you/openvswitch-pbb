@@ -126,6 +126,11 @@ void flow_set_mpls_tc(struct flow *, int idx, uint8_t tc);
 void flow_set_mpls_bos(struct flow *, int idx, uint8_t stack);
 void flow_set_mpls_lse(struct flow *, int idx, ovs_be32 lse);
 
+void flow_push_pbb(struct flow *flow, ovs_be16 pbb_eth_type);
+void flow_pop_pbb(struct flow *flow);
+void flow_set_pbb_isid(struct flow *flow, ovs_be32 isid);
+void flow_set_pbb_uca(struct flow *flow, uint8_t uca);
+
 void flow_compose(struct dp_packet *, const struct flow *,
                   const void *l7, size_t l7_len);
 void packet_expand(struct dp_packet *, const struct flow *, size_t size);

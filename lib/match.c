@@ -763,6 +763,38 @@ match_set_dl_vlan_pcp(struct match *match, uint8_t dl_vlan_pcp, int id)
     match->wc.masks.vlans[id].tci |= htons(VLAN_CFI | VLAN_PCP_MASK);
 }
 
+/* Modifies 'match' so that the PBB isid is wildcarded. */
+void
+match_set_any_pbb_isid(struct match *match)
+{
+    match->wc.masks.pbb_itag &= ~htonl(PBB_ISID_MASK);
+    flow_set_pbb_isid(&match->flow, htonl(0));
+}
+
+/* Modifies 'match' so that it matches only packets with an PBB header whose
+ * isid equals the low 24 bits of 'pbb_isid'. */
+void
+match_set_pbb_isid(struct match *match, ovs_be32 pbb_isid)
+{
+    match->wc.masks.pbb_itag |= htonl(PBB_ISID_MASK);
+    flow_set_pbb_isid(&match->flow, pbb_isid);
+}
+
+void
+match_set_any_pbb_uca(struct match *match)
+{
+    match->wc.masks.pbb_itag &= ~htonl(PBB_UCA_MASK);
+    flow_set_pbb_uca(&match->flow, 0);
+}
+
+/* Modifies 'match' so that it matches only packets with an PBB header UCA bit*/
+void
+match_set_pbb_uca(struct match *match, uint8_t pbb_uca)
+{
+    match->wc.masks.pbb_itag |= htonl(PBB_UCA_MASK);
+    flow_set_pbb_uca(&match->flow, pbb_uca);
+}
+
 /* Modifies 'match' so that the MPLS label 'idx' matches 'lse' exactly. */
 void
 match_set_mpls_lse(struct match *match, int idx, ovs_be32 lse)
@@ -1647,6 +1679,14 @@ match_format(const struct match *match,
     if (wc->masks.nw_ttl) {
         ds_put_format(s, "%snw_ttl=%s%d,",
                       colors.param, colors.end, f->nw_ttl);
+    }
+    if (wc->masks.pbb_itag & htonl(PBB_ISID_MASK)) {
+        ds_put_format(s, "%spbb_isid=%s%"PRIu32",", colors.param,
+                      colors.end, pbb_itag_to_isid(f->pbb_itag));
+    }
+    if (wc->masks.pbb_itag & htonl(PBB_UCA_MASK)) {
+        ds_put_format(s, "%spbb_uca=%s%"PRIu8",", colors.param,
+                      colors.end, pbb_itag_to_uca(f->pbb_itag));
     }
     if (wc->masks.mpls_lse[0] & htonl(MPLS_LABEL_MASK)) {
         ds_put_format(s, "%smpls_label=%s%"PRIu32",", colors.param,

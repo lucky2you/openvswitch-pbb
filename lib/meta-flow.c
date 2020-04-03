@@ -318,6 +318,11 @@ mf_is_all_wild(const struct mf_field *mf, const struct flow_wildcards *wc)
     case MFF_MPLS_TTL:
         return !(wc->masks.mpls_lse[0] & htonl(MPLS_TTL_MASK));
 
+    case MFF_PBB_ISID:
+        return !(wc->masks.pbb_itag & htonl(PBB_ISID_MASK));
+    case MFF_PBB_UCA:
+        return !(wc->masks.pbb_itag & htonl(PBB_UCA_MASK));
+
     case MFF_IPV4_SRC:
         return !wc->masks.nw_src;
     case MFF_IPV4_DST:
@@ -452,6 +457,8 @@ mf_are_prereqs_ok__(const struct mf_field *mf, const struct flow *flow,
         return dl_type == htons(ETH_TYPE_IPV6);
     case MFP_VLAN_VID:
         return is_vlan(flow, wc);
+    case MFP_PBB:
+        return dl_type == htons(ETH_TYPE_PBB);
     case MFP_MPLS:
         return eth_type_mpls(dl_type);
     case MFP_IP_ANY:
@@ -620,6 +627,12 @@ mf_is_value_valid(const struct mf_field *mf, const union mf_value *value)
 
     case MFF_MPLS_BOS:
         return !(value->u8 & ~(MPLS_BOS_MASK >> MPLS_BOS_SHIFT));
+
+    case MFF_PBB_ISID:
+        return !(value->be32 & ~htonl(PBB_ISID_MASK >> PBB_ISID_SHIFT));
+
+    case MFF_PBB_UCA:
+        return !(value->u8   & ~(PBB_UCA_MASK >> PBB_UCA_SHIFT));
 
     case MFF_TUN_FLAGS:
         return !(value->be16 & ~htons(FLOW_TNL_PUB_F_MASK));
@@ -835,6 +848,14 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
 
     case MFF_MPLS_TTL:
         value->u8 = mpls_lse_to_ttl(flow->mpls_lse[0]);
+        break;
+
+    case MFF_PBB_ISID:
+        value->be32 = htonl(pbb_itag_to_isid(flow->pbb_itag));
+        break;
+
+    case MFF_PBB_UCA:
+        value->u8 = pbb_itag_to_uca(flow->pbb_itag);
         break;
 
     case MFF_IPV4_SRC:
@@ -1173,6 +1194,14 @@ mf_set_value(const struct mf_field *mf,
 
     case MFF_MPLS_TTL:
         match_set_mpls_ttl(match, 0, value->u8);
+        break;
+
+    case MFF_PBB_ISID:
+        match_set_pbb_isid(match, value->be32);
+        break;
+
+    case MFF_PBB_UCA:
+        match_set_pbb_uca(match, value->u8);
         break;
 
     case MFF_IPV4_SRC:
@@ -1573,6 +1602,14 @@ mf_set_flow_value(const struct mf_field *mf,
         flow_fix_vlan_tpid(flow);
         break;
 
+    case MFF_PBB_ISID:
+        flow_set_pbb_isid(flow, value->be32);
+        break;
+
+    case MFF_PBB_UCA:
+        flow_set_pbb_uca(flow, value->u8);
+        break;
+
     case MFF_MPLS_LABEL:
         flow_set_mpls_label(flow, 0, value->be32);
         break;
@@ -1817,6 +1854,8 @@ mf_is_pipeline_field(const struct mf_field *mf)
     case MFF_VLAN_VID:
     case MFF_DL_VLAN_PCP:
     case MFF_VLAN_PCP:
+    case MFF_PBB_ISID:
+    case MFF_PBB_UCA:
     case MFF_MPLS_LABEL:
     case MFF_MPLS_TC:
     case MFF_MPLS_BOS:
@@ -2096,6 +2135,14 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
         match_set_any_pcp(match);
         break;
 
+    case MFF_PBB_ISID:
+        match_set_any_pbb_isid(match);
+        break;
+
+    case MFF_PBB_UCA:
+        match_set_any_pbb_uca(match);
+        break;
+
     case MFF_MPLS_LABEL:
         match_set_any_mpls_label(match, 0);
         break;
@@ -2313,6 +2360,8 @@ mf_set(const struct mf_field *mf,
     case MFF_DL_VLAN:
     case MFF_DL_VLAN_PCP:
     case MFF_VLAN_PCP:
+    case MFF_PBB_ISID:
+    case MFF_PBB_UCA:
     case MFF_MPLS_LABEL:
     case MFF_MPLS_TC:
     case MFF_MPLS_BOS:

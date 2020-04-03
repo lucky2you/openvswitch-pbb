@@ -241,6 +241,12 @@ enum ofp_raw_action_type {
     OFPAT_RAW12_SET_FIELD,
     /* OF1.5+(25): struct ofp12_action_set_field, ... VLMFF */
     OFPAT_RAW15_SET_FIELD,
+
+    /* OF1.3+(26): ovs_be16. */
+    OFPAT_RAW13_PUSH_PBB,
+    /* OF1.3+(27): void. */
+    OFPAT_RAW13_POP_PBB,
+
     /* NX1.0-1.4(7): struct nx_action_reg_load. VLMFF
      *
      * [In OpenFlow 1.5, set_field is a superset of reg_load functionality, so
@@ -476,6 +482,8 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_PBB:
+    case OFPACT_POP_PBB:
     case OFPACT_SET_TUNNEL:
     case OFPACT_SET_QUEUE:
     case OFPACT_POP_QUEUE:
@@ -4061,6 +4069,112 @@ check_POP_MPLS(const struct ofpact_pop_mpls *a, struct ofpact_check_params *cp)
         inconsistent_match(&cp->usable_protocols);
     }
     flow->dl_type = a->ethertype;
+    return 0;
+}
+
+/* Push PBB action. */
+
+static enum ofperr
+decode_OFPAT_RAW13_PUSH_PBB(ovs_be16 ethertype,
+                            enum ofp_version ofp_version OVS_UNUSED,
+                            struct ofpbuf *out)
+{
+    struct ofpact_push_pbb *oam;
+
+    if (ethertype != htons(ETH_TYPE_PBB)) {
+        return OFPERR_OFPBAC_BAD_ARGUMENT;
+    }
+    oam = ofpact_put_PUSH_PBB(out);
+    oam->ethertype = ethertype;
+
+    return 0;
+}
+
+static void
+encode_PUSH_PBB(const struct ofpact_push_pbb *push_pbb,
+                enum ofp_version ofp_version OVS_UNUSED,
+                struct ofpbuf *out)
+{
+    put_OFPAT13_PUSH_PBB(out, push_pbb->ethertype);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_PUSH_PBB(char *arg, const struct ofpact_parse_params *pp)
+{
+    uint16_t ethertype;
+    char *error;
+
+    error = str_to_u16(arg, "push_pbb", &ethertype);
+    if (!error) {
+        ofpact_put_PUSH_PBB(pp->ofpacts)->ethertype = htons(ethertype);
+    }
+    return error;
+}
+
+static void
+format_PUSH_PBB(const struct ofpact_push_pbb *a,
+                const struct ofpact_format_params *fp)
+{
+    ds_put_format(fp->s, "%spush_pbb:%s0x%04"PRIx16,
+                  colors.param, colors.end, ntohs(a->ethertype));
+}
+
+static enum ofperr
+check_PUSH_PBB(const struct ofpact_push_pbb *a,
+               struct ofpact_check_params *cp)
+{
+    struct flow *flow = &cp->match->flow;
+
+    if (flow->packet_type != htonl(PT_ETH)) {
+        inconsistent_match(&cp->usable_protocols);
+    }
+    flow->dl_type = a->ethertype;
+
+    return 0;
+}
+
+/* Pop PBB action. */
+static enum ofperr
+decode_OFPAT_RAW13_POP_PBB(struct ofpbuf *out)
+{
+    ofpact_put_POP_PBB(out);
+    return 0;
+}
+
+static void
+encode_POP_PBB(const struct ofpact_null *a OVS_UNUSED,
+               enum ofp_version ofp_version OVS_UNUSED,
+               struct ofpbuf *out)
+{
+    put_OFPAT13_POP_PBB(out);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_POP_PBB(char *arg OVS_UNUSED, const struct ofpact_parse_params *pp)
+{
+    *pp->usable_protocols &= OFPUTIL_P_OF13_UP;
+    ofpact_put_POP_PBB(pp->ofpacts);
+    return NULL;
+}
+
+static void
+format_POP_PBB(const struct ofpact_null *a OVS_UNUSED,
+               const struct ofpact_format_params *fp)
+{
+    ds_put_format(fp->s, "%spop_pbb%s", colors.param, colors.end);
+}
+
+static enum ofperr
+check_POP_PBB(const struct ofpact_null *a OVS_UNUSED,
+              struct ofpact_check_params *cp)
+{
+    struct flow *flow = &cp->match->flow;
+    ovs_be16 dl_type = get_dl_type(flow);
+
+    if (flow->packet_type != htonl(PT_ETH) || htons(ETH_TYPE_PBB) != dl_type) {
+        inconsistent_match(&cp->usable_protocols);
+    }
+
     return 0;
 }
 
@@ -7763,12 +7877,14 @@ ofpact_copy(struct ofpbuf *out, const struct ofpact *a)
 /* The order in which actions in an action set get executed.  This is only for
  * the actions where only the last instance added is used. */
 #define ACTION_SET_ORDER                        \
+    SLOT(OFPACT_POP_PBB)                        \
     SLOT(OFPACT_STRIP_VLAN)                     \
     SLOT(OFPACT_POP_MPLS)                       \
     SLOT(OFPACT_DECAP)                          \
     SLOT(OFPACT_ENCAP)                          \
     SLOT(OFPACT_PUSH_MPLS)                      \
     SLOT(OFPACT_PUSH_VLAN)                      \
+    SLOT(OFPACT_PUSH_PBB)                       \
     SLOT(OFPACT_DEC_TTL)                        \
     SLOT(OFPACT_DEC_MPLS_TTL)                   \
     SLOT(OFPACT_DEC_NSH_TTL)
@@ -8050,6 +8166,8 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type,
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_PBB:
+    case OFPACT_POP_PBB:
     case OFPACT_SET_TUNNEL:
     case OFPACT_SET_QUEUE:
     case OFPACT_POP_QUEUE:
@@ -8844,7 +8962,9 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_DEC_TTL, 24 },
         { OFPACT_SET_FIELD, 25 },
         /* OF1.3+ OFPAT_PUSH_PBB (26) not supported. */
+        { OFPACT_PUSH_PBB, 26 },
         /* OF1.3+ OFPAT_POP_PBB (27) not supported. */
+        { OFPACT_POP_PBB, 27 },
         { 0, -1 },
     };
 
@@ -8966,6 +9086,8 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_UNROLL_XLATE:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_PBB:
+    case OFPACT_POP_PBB:
     case OFPACT_SAMPLE:
     case OFPACT_CLEAR_ACTIONS:
     case OFPACT_CLONE:

@@ -94,6 +94,8 @@ struct vl_mff_map;
     OFPACT(PUSH_MPLS,       ofpact_push_mpls,   ofpact, "push_mpls")    \
     OFPACT(POP_MPLS,        ofpact_pop_mpls,    ofpact, "pop_mpls")     \
     OFPACT(DEC_NSH_TTL,     ofpact_null,        ofpact, "dec_nsh_ttl")  \
+    OFPACT(PUSH_PBB,        ofpact_push_pbb,    ofpact, "push_pbb")     \
+    OFPACT(POP_PBB,         ofpact_null,        ofpact, "pop_pbb")      \
                                                                         \
     /* Generic encap & decap */                                         \
     OFPACT(ENCAP,           ofpact_encap,       props, "encap")         \
@@ -279,7 +281,7 @@ ofpact_find_type_flattened(const struct ofpact *a, enum ofpact_type type,
 /* OFPACT_STRIP_VLAN, OFPACT_POP_QUEUE, OFPACT_EXIT, OFPACT_CLEAR_ACTIONS.
  *
  * Used for OFPAT10_STRIP_VLAN, NXAST_POP_QUEUE, NXAST_EXIT,
- * OFPAT11_POP_VLAN, OFPIT11_CLEAR_ACTIONS.
+ * OFPAT11_POP_VLAN, OFPIT11_CLEAR_ACTIONS, OFPAT13_POP_PBB.
  *
  * Action structure for actions that do not have any extra data beyond the
  * action type. */
@@ -570,6 +572,16 @@ struct ofpact_push_mpls {
  *
  * Used for NXAST_POP_MPLS, OFPAT11_POP_MPLS.. */
 struct ofpact_pop_mpls {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        ovs_be16 ethertype;
+    );
+};
+
+/* OFPACT_PUSH_PBB
+ *
+ * Used for . */
+struct ofpact_push_pbb {
     OFPACT_PADDED_MEMBERS(
         struct ofpact ofpact;
         ovs_be16 ethertype;

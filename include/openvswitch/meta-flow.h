@@ -1207,6 +1207,38 @@ enum OVS_PACKED_ENUM mf_field_id {
     MFF_VLAN_PCP,
 
 /* ## ---- ## */
+/* ## PBB ## */
+/* ## ---- ## */
+
+    /* "pbb_isid".
+     *
+     * The I-SID in the ﬁrst PBB service instance tag. 
+     *
+     * Type: be32 (low 24 bits).
+     * Maskable: bitwise.
+     * Formatting: decimal.
+     * Prerequisites: PBB.
+     * Access: read/write.
+     * NXM: none.
+     * OXM: OXM_OF_PBB_ISID(37) since OF1.3 and v2.12.
+     */
+    MFF_PBB_ISID,
+
+    /* "pbb_uca".
+     *
+     * The UCA ﬁeld in the ﬁrst PBB service instance tag.
+     *
+     * Type: u8.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: PBB.
+     * Access: read/write.
+     * NXM: none.
+     * OXM: OXM_OF_PBB_UCA(41) since OF1.3 and v2.12.
+     */
+    MFF_PBB_UCA,
+
+/* ## ---- ## */
 /* ## MPLS ## */
 /* ## ---- ## */
 
@@ -2035,6 +2067,7 @@ enum OVS_PACKED_ENUM mf_prereqs {
     MFP_IPV6,
     MFP_IP_ANY,
     MFP_NSH,
+    MFP_PBB,
 
     /* L2.5 requirements. */
     MFP_MPLS,

@@ -202,6 +202,21 @@ odp_set_tunnel_action(const struct nlattr *a, struct flow_tnl *tun_key)
 }
 
 static void
+set_pbb(struct dp_packet *packet, const struct ovs_key_pbb *key,
+        const struct ovs_key_pbb *mask)
+{
+    struct eth_header *ceh = dp_packet_eth(packet);
+    ovs_16aligned_be32* itag = (ovs_16aligned_be32*)(ceh + 1);
+
+    if (!mask) {
+        put_16aligned_be32(itag, key->pbb_itag);
+    } else {
+        ovs_be32 t = get_16aligned_be32(itag);
+        put_16aligned_be32(itag, key->pbb_itag | (t & ~mask->pbb_itag));
+    }
+}
+
+static void
 set_arp(struct dp_packet *packet, const struct ovs_key_arp *key,
         const struct ovs_key_arp *mask)
 {
@@ -432,6 +447,10 @@ odp_execute_set_action(struct dp_packet *packet, const struct nlattr *a)
         set_mpls_lse(packet, nl_attr_get_be32(a));
         break;
 
+    case OVS_KEY_ATTR_PBB:
+        set_pbb_itag(packet, nl_attr_get_be32(a));
+        break;
+
     case OVS_KEY_ATTR_ARP:
         set_arp(packet, nl_attr_get(a), NULL);
         break;
@@ -555,6 +574,11 @@ odp_execute_masked_set_action(struct dp_packet *packet,
                                | (get_16aligned_be32(&mh->mpls_lse)
                                   & ~*get_mask(a, ovs_be32)));
         }
+        break;
+
+    case OVS_KEY_ATTR_PBB:
+        set_pbb(packet, nl_attr_get(a),
+                get_mask(a, struct ovs_key_pbb));
         break;
 
     case OVS_KEY_ATTR_ARP:
@@ -741,6 +765,8 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_HASH:
     case OVS_ACTION_ATTR_PUSH_MPLS:
     case OVS_ACTION_ATTR_POP_MPLS:
+    case OVS_ACTION_ATTR_PUSH_PBB:
+    case OVS_ACTION_ATTR_POP_PBB:
     case OVS_ACTION_ATTR_TRUNC:
     case OVS_ACTION_ATTR_PUSH_ETH:
     case OVS_ACTION_ATTR_POP_ETH:
@@ -880,6 +906,21 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_POP_MPLS:
             DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
                 pop_mpls(packet, nl_attr_get_be16(a));
+            }
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_PBB: {
+            const struct ovs_action_push_pbb *pbb = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                push_pbb(packet, pbb->pbb_ethertype);
+            }
+            break;
+         }
+
+        case OVS_ACTION_ATTR_POP_PBB:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                pop_pbb(packet);
             }
             break;
 

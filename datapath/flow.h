@@ -91,6 +91,9 @@ struct sw_flow_key {
 		struct vlan_head cvlan;
 		__be16 type;		/* Ethernet frame type. */
 	} eth;
+	struct { 
+		u32 itag;
+	} pbb;
 	/* Filling a hole of two bytes. */
 	u8 ct_state;
 	u8 ct_orig_proto;		/* CT original direction tuple IP
