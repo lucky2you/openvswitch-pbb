@@ -15,7 +15,7 @@ OpenFlow 1.3 and OpenFlow 1.4 added OXMs for the following fields not yet implem
 * PBB I-SID.
 * PBB UCA.
 
-This is a branch added code for  supporting these actions and fileds based on offical Open vSwtich version 2.12.0.
+This is a branch added code for  supporting these actions and fileds based on offical Open vSwtich version 2.12.0. This branch should work on Linux, and can NOT work on Windows or MAC. Tested only on ubuntu 16.04 
 
 
 Usage

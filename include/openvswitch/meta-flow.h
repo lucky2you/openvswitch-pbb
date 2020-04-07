@@ -1212,7 +1212,7 @@ enum OVS_PACKED_ENUM mf_field_id {
 
     /* "pbb_isid".
      *
-     * The I-SID in the ﬁrst PBB service instance tag. 
+     * The I-SID in the PBB service instance tag. 
      *
      * Type: be32 (low 24 bits).
      * Maskable: bitwise.
@@ -1226,7 +1226,7 @@ enum OVS_PACKED_ENUM mf_field_id {
 
     /* "pbb_uca".
      *
-     * The UCA ﬁeld in the ﬁrst PBB service instance tag.
+     * The UCA ﬁeld in the PBB service instance tag.
      *
      * Type: u8.
      * Maskable: no.
@@ -1234,7 +1234,7 @@ enum OVS_PACKED_ENUM mf_field_id {
      * Prerequisites: PBB.
      * Access: read/write.
      * NXM: none.
-     * OXM: OXM_OF_PBB_UCA(41) since OF1.3 and v2.12.
+     * OXM: OXM_OF_PBB_UCA(41) since OF1.4 and v2.12.
      */
     MFF_PBB_UCA,
 

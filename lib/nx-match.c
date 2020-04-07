@@ -217,7 +217,10 @@ static uint64_t
 mf_oxm_header(enum mf_field_id id, enum ofp_version version)
 {
     const struct nxm_field *f = nxm_field_by_mf_id(id, version);
-    return f ? f->header : 0;
+    if (f) {
+        return NXM_HEADER(0x0,0x8000,37,0,3) == f->header ? NXM_HEADER(0x0,0x8000,37,0,4) : f->header;
+    }
+    return 0;
 }
 
 /* Returns the 32-bit OXM or NXM header to use for field 'id', preferring an
@@ -380,6 +383,11 @@ copy_entry_value(const struct mf_field *field, union mf_value *value,
     copy_len = MIN(width, field ? field->n_bytes : sizeof *value);
 
     if (field && field->variable_len) {
+        memset(value, 0, field->n_bytes);
+        copy_dst = &value->u8 + field->n_bytes - copy_len;
+    }
+
+    if (copy_len == 3) {
         memset(value, 0, field->n_bytes);
         copy_dst = &value->u8 + field->n_bytes - copy_len;
     }
@@ -2260,6 +2268,8 @@ nxm_field_by_header(uint64_t header, bool is_action, enum ofperr *h_error)
 {
     const struct nxm_field_index *nfi;
     uint64_t header_no_len;
+
+    header = NXM_HEADER(0x0,0x8000,37,0,3) == header ? NXM_HEADER(0x0,0x8000,37,0,4) : header;
 
     nxm_init();
     if (nxm_hasmask(header)) {
